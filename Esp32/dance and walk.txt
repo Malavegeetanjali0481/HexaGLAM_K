@@ -1,0 +1,643 @@
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+
+// =====================================================
+// BLUETOOTH SUPPORT ADDED
+// =====================================================
+#include "BluetoothSerial.h"
+BluetoothSerial SerialBT;
+
+// =====================================================
+// HEXAPOD ROBOT (ESP32 VERSION)
+// Logic unchanged from Nano version
+// =====================================================
+
+// ------------------- CONFIG -------------------
+#define SERVO_FREQ 60
+
+// ESP32 I2C PINS
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+// ------------------- GAIT PARAMETERS -------------------
+float gaitCycleTime = 1600;
+float stanceRatio   = 0.65;
+
+// Motion amplitudes
+float coxaAmplitude = 15;
+float femurLift     = 15;
+float tibiaLift     = 8;
+
+// Servo safety limits
+int minAngle = 40;
+int maxAngle = 150;
+
+// ------------------- JOINT DEFINITIONS -------------------
+#define COXA  0
+#define FEMUR 1
+#define TIBIA 2
+
+// ------------------- LEG DEFINITIONS -------------------
+#define FL 0
+#define ML 1
+#define RL 2
+#define FR 3
+#define MR 4
+#define RR 5
+
+// ------------------- SERVO MAPPING -------------------
+int servoIndex[6][3] = {
+
+  {0, 1, 2},
+  {3, 4, 5},
+  {6, 7, 8},
+
+  {9, 10, 11},
+  {12, 13, 14},
+  {15, 16, 17}
+};
+
+// ------------------- NEUTRAL POSITIONS -------------------
+int neutralAngle[6][3] = {
+
+  {130, 70, 70},
+  {90, 70, 70},
+  {70, 70, 70},
+
+  {70, 105, 130},
+  {90, 105, 110},
+  {120, 110, 130}
+};
+
+// ------------------- INVERSION FLAGS -------------------
+int invCoxa[6]  = {-1, -1, -1,  1,  1,  1};
+
+int invFemur[6] = {
+   1,  1,  1,
+  -1, -1, -1
+};
+
+int invTibia[6] = {
+   1,  1,  1,
+  -1, -1, -1
+};
+
+// =====================================================
+// PCA9685 OBJECTS
+// =====================================================
+
+Adafruit_PWMServoDriver pwm1 = Adafruit_PWMServoDriver(0x40);
+Adafruit_PWMServoDriver pwm2 = Adafruit_PWMServoDriver(0x41);
+
+float usPerTick;
+
+// =====================================================
+// CONTROL MODES
+// =====================================================
+
+enum Mode {
+  STAND,
+  WALK,
+  DANCE,
+  HALT
+};
+
+Mode mode = STAND;
+
+// =====================================================
+// TIMERS
+// =====================================================
+
+unsigned long gaitStartTime = 0;
+unsigned long lastUpdate = 0;
+
+// =====================================================
+// UTILITY FUNCTIONS
+// =====================================================
+
+uint16_t usToTicks(uint16_t us) {
+
+  float ticks = us / usPerTick;
+
+  if (ticks < 0) ticks = 0;
+  if (ticks > 4095) ticks = 4095;
+
+  return (uint16_t)(ticks + 0.5f);
+}
+
+// Convert angle -> microseconds
+uint16_t angleToUs(int angle) {
+
+  return map(angle, 0, 180, 480, 2120);
+}
+
+// =====================================================
+// SERVO OUTPUT
+// =====================================================
+
+void setServoAngle(int servo, int angle) {
+
+  angle = constrain(angle, minAngle, maxAngle);
+
+  uint16_t us = angleToUs(angle);
+  uint16_t ticks = usToTicks(us);
+
+  // PCA BOARD #1
+  if (servo < 16) {
+
+    pwm1.setPWM(servo, 0, ticks);
+  }
+
+  // PCA BOARD #2
+  else {
+
+    pwm2.setPWM(servo - 16, 0, ticks);
+  }
+}
+
+// =====================================================
+// GAIT MATH
+// =====================================================
+
+// Smooth lift curve
+float liftShape(float local) {
+
+  return sin(local * PI);
+}
+
+// Coxa motion
+float coxaOffset(float phase) {
+
+  // STANCE
+  if (phase < stanceRatio) {
+
+    float local = phase / stanceRatio;
+
+    return -coxaAmplitude * cos(local * PI);
+  }
+
+  // SWING
+  else {
+
+    float local = (phase - stanceRatio) / (1.0 - stanceRatio);
+
+    return coxaAmplitude * cos(local * PI);
+  }
+}
+
+// Femur lift
+float femurOffset(float phase) {
+
+  if (phase < stanceRatio) {
+    return 0;
+  }
+
+  float local = (phase - stanceRatio) / (1.0 - stanceRatio);
+
+  return femurLift * liftShape(local);
+}
+
+// Tibia lift
+float tibiaOffset(float phase) {
+
+  if (phase < stanceRatio) {
+    return 0;
+  }
+
+  float local = (phase - stanceRatio) / (1.0 - stanceRatio);
+
+  return tibiaLift * liftShape(local);
+}
+
+// =====================================================
+// PHASE FUNCTIONS
+// =====================================================
+
+// Tripod phase assignment
+float legPhase(int leg, float globalPhase) {
+
+  bool tripodA =
+    (leg == FL || leg == MR || leg == RL);
+
+  float p = globalPhase;
+
+  // Tripod B shift
+  if (!tripodA) {
+    p += 0.5;
+  }
+
+  if (p >= 1.0) {
+    p -= 1.0;
+  }
+
+  return p;
+}
+
+// =====================================================
+// ANGLE COMPUTATION
+// =====================================================
+
+float computeAngle(int leg, int joint, float phase) {
+
+  float offset = 0;
+
+  // COXA
+  if (joint == COXA) {
+
+    offset =
+      coxaOffset(phase) *
+      invCoxa[leg];
+  }
+
+  // FEMUR
+  if (joint == FEMUR) {
+
+    offset =
+      femurOffset(phase) *
+      invFemur[leg];
+  }
+
+  // TIBIA
+  if (joint == TIBIA) {
+
+    offset =
+      tibiaOffset(phase) *
+      invTibia[leg];
+  }
+
+  return neutralAngle[leg][joint] + offset;
+}
+
+// =====================================================
+// POSES
+// =====================================================
+
+void standPose() {
+
+  for (int leg = 0; leg < 6; leg++) {
+
+    for (int joint = 0; joint < 3; joint++) {
+
+      setServoAngle(
+        servoIndex[leg][joint],
+        neutralAngle[leg][joint]
+      );
+    }
+  }
+}
+
+// =====================================================
+// DANCE MODE
+// =====================================================
+
+void dance() {
+  Serial.println("DANCE");
+  int delayTime = 15; // Adjusted delay for smoother servo sweeps
+
+  // 1. Side-to-side sway (Coxa joint sweep: 0 to +30 to -30 to 0)
+  for (int cycle = 0; cycle < 3; cycle++) {
+    for (int offset = 0; offset <= 30; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = 30; offset >= -30; offset--) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = -30; offset <= 0; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+  }
+
+for (int cycle = 0; cycle < 3; cycle++) {
+    for (int offset = 0; offset <= 45; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = 45; offset >= -45; offset--) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = -45; offset <= 0; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][COXA], neutralAngle[i][COXA] + (offset * invCoxa[i]));
+      }
+      delay(delayTime);
+    }
+  }
+
+
+  // 2. Body bounce (Femur joint sweep: 0 to -25 to 0)
+  for (int cycle = 0; cycle < 4; cycle++) {
+    for (int offset = 0; offset >= -25; offset--) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][FEMUR], neutralAngle[i][FEMUR] + (offset * invFemur[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = -25; offset <= 0; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][FEMUR], neutralAngle[i][FEMUR] + (offset * invFemur[i]));
+      }
+      delay(delayTime);
+    }
+  }
+for (int cycle = 0; cycle < 4; cycle++) {
+    for (int offset = 0; offset >= -35; offset--) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][FEMUR], neutralAngle[i][FEMUR] + (offset * invFemur[i]));
+      }
+      delay(delayTime);
+    }
+
+    for (int offset = -35; offset <= 0; offset++) {
+      for (int i = 0; i < 6; i++) {
+        setServoAngle(servoIndex[i][FEMUR], neutralAngle[i][FEMUR] + (offset * invFemur[i]));
+      }
+      delay(delayTime);
+    }
+  }
+
+  standPose();
+
+  Serial.println("DANCE COMPLETE");
+}
+
+// =====================================================
+// WALKING
+// =====================================================
+
+void walkCycle() {
+
+  float cycle =
+    (millis() - gaitStartTime) %
+    (unsigned long)gaitCycleTime;
+
+  float globalPhase =
+    cycle / gaitCycleTime;
+
+  // Update all legs
+  for (int leg = 0; leg < 6; leg++) {
+
+    float phase =
+      legPhase(leg, globalPhase);
+
+    for (int joint = 0; joint < 3; joint++) {
+
+      int angle =
+        computeAngle(
+          leg,
+          joint,
+          phase
+        );
+
+      setServoAngle(
+        servoIndex[leg][joint],
+        angle
+      );
+    }
+  }
+}
+
+// =====================================================
+// SERIAL + BLUETOOTH COMMANDS
+// =====================================================
+
+void handleSerial() {
+
+  String cmd = "";
+
+  // ---------------- SERIAL INPUT ----------------
+  if (Serial.available()) {
+
+    cmd =
+      Serial.readStringUntil('\n');
+
+    cmd.trim();
+  }
+
+  // -------------- BLUETOOTH INPUT ---------------
+  else if (SerialBT.available()) {
+
+    cmd =
+      SerialBT.readStringUntil('\n');
+
+    cmd.trim();
+  }
+
+  else {
+    return;
+  }
+
+  // ---------------- STAND ----------------
+  if (cmd == "s" || cmd == "stand") {
+
+    mode = STAND;
+
+    standPose();
+
+    Serial.println("Mode: STAND");
+    SerialBT.println("Mode: STAND");
+  }
+
+  // ---------------- WALK ----------------
+  else if (cmd == "w" || cmd == "walk") {
+
+    gaitStartTime = millis();
+
+    mode = WALK;
+
+    Serial.println("Mode: WALK");
+    SerialBT.println("Mode: WALK");
+  }
+
+  // ---------------- DANCE ----------------
+  else if (cmd == "d" || cmd == "dance")
+  {
+    mode = DANCE;
+
+    Serial.println("Mode: DANCE");
+    SerialBT.println("Mode: DANCE");
+    
+    dance();
+    mode = STAND; // Revert to stand after completing dance
+  }
+
+  // ---------------- HALT ----------------
+  else if (cmd == "h" || cmd == "halt") {
+
+    mode = HALT;
+
+    Serial.println("Mode: HALT");
+    SerialBT.println("Mode: HALT");
+  }
+
+  // ---------------- SPEED ----------------
+  else if (cmd.startsWith("speed ")) {
+
+    int value =
+      cmd.substring(6).toInt();
+
+    if (value > 200) {
+
+      gaitCycleTime = value;
+
+      Serial.print("Cycle Time: ");
+      Serial.println(gaitCycleTime);
+
+      SerialBT.print("Cycle Time: ");
+      SerialBT.println(gaitCycleTime);
+    }
+  }
+
+  // ---------------- STRIDE ----------------
+  else if (cmd.startsWith("stride ")) {
+
+    int value =
+      cmd.substring(7).toInt();
+
+    coxaAmplitude = value;
+
+    Serial.print("Stride: ");
+    Serial.println(coxaAmplitude);
+
+    SerialBT.print("Stride: ");
+    SerialBT.println(coxaAmplitude);
+  }
+
+  // ---------------- FEMUR ----------------
+  else if (cmd.startsWith("lift ")) {
+
+    int value =
+      cmd.substring(5).toInt();
+
+    femurLift = value;
+
+    Serial.print("Femur Lift: ");
+    Serial.println(femurLift);
+
+    SerialBT.print("Femur Lift: ");
+    SerialBT.println(femurLift);
+  }
+
+  // ---------------- TIBIA ----------------
+  else if (cmd.startsWith("knee ")) {
+
+    int value =
+      cmd.substring(5).toInt();
+
+    tibiaLift = value;
+
+    Serial.print("Tibia Lift: ");
+    Serial.println(tibiaLift);
+
+    SerialBT.print("Tibia Lift: ");
+    SerialBT.println(tibiaLift);
+  }
+}
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // =====================================================
+  // BLUETOOTH START
+  // =====================================================
+  SerialBT.begin("ESP32_HEXAPOD");
+
+  // ESP32 I2C START
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  // PCA #1
+  pwm1.begin();
+  pwm1.setPWMFreq(SERVO_FREQ);
+
+  // PCA #2
+  pwm2.begin();
+  pwm2.setPWMFreq(SERVO_FREQ);
+
+  // Tick conversion
+  float periodUs =
+    1000000.0 / SERVO_FREQ;
+
+  usPerTick =
+    periodUs / 4096.0;
+
+  delay(500);
+
+  standPose();
+
+  Serial.println();
+  Serial.println("=================================");
+  Serial.println(" HEXAPOD READY (ESP32) ");
+  Serial.println("=================================");
+  Serial.println("Commands:");
+  Serial.println("s / stand");
+  Serial.println("w / walk");
+  Serial.println("d / dance");
+  Serial.println("h / halt");
+  Serial.println("speed <ms>");
+  Serial.println("stride <deg>");
+  Serial.println("lift <deg>");
+  Serial.println("knee <deg>");
+  Serial.println("=================================");
+
+  // Bluetooth startup message
+  SerialBT.println();
+  SerialBT.println("=================================");
+  SerialBT.println(" HEXAPOD READY (ESP32) ");
+  SerialBT.println("=================================");
+  SerialBT.println("Bluetooth Name: ESP32_HEXAPOD");
+  SerialBT.println("Commands:");
+  SerialBT.println("s / stand");
+  SerialBT.println("w / walk");
+  SerialBT.println("d / dance");
+  SerialBT.println("h / halt");
+  SerialBT.println("speed <ms>");
+  SerialBT.println("stride <deg>");
+  SerialBT.println("lift <deg>");
+  SerialBT.println("knee <deg>");
+  SerialBT.println("=================================");
+}
+
+// =====================================================
+// MAIN LOOP
+// =====================================================
+
+void loop() {
+
+  handleSerial();
+
+  unsigned long now = millis();
+
+  // 50Hz update loop
+  if (now - lastUpdate >= 20) {
+
+    lastUpdate = now;
+
+    if (mode == WALK) {
+
+      walkCycle();
+    }
+  }
+}
