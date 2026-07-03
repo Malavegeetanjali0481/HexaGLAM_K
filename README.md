@@ -1,4 +1,4 @@
-
+ https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
 ### 📱 HexaGlam_K Mobile Application Development
 
 The HexaGlam_K mobile application was developed using MIT App Inventor to provide an intuitive interface for controlling and monitoring the ESP32-based Hexapod Robot. The application consists of multiple screens, each designed for a specific functionality, making robot operation simple and user-friendly.
