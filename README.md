@@ -1,5 +1,5 @@
 
- Walking : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1/Watch demo
+ Walking : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/Watch demo
  
  Dancing : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/2
  
