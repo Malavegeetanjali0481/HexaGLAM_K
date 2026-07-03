@@ -31,7 +31,7 @@ The implemented control functions include:
 
 A Sensor Dashboard was developed to display real-time environmental data collected by the sensors connected to the ESP32. The dashboard retrieves data from the ThingSpeak cloud platform and presents all sensor readings on a single screen.
 Each sensor value is displayed inside individual cards with appropriate labels, making the dashboard easy to understand and monitor.
-### These are the screens of app:
+### These are the Screens of app:
 <table>
   <tr>
     <td >
