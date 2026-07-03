@@ -20,26 +20,27 @@ Clean and responsive layout
 A dedicated Control Screen was developed to operate the Hexapod robot remotely. Large control buttons were added to send Bluetooth commands to the ESP32. Each button transmits a predefined command that controls the robot's movements.
 
 The implemented control functions include:
+<ul>
+  <li>Stand</li>
+   <li>Walk</li>
+   <li>Dance</li>
+   <li>Halt</li>
 
-Stand
-Walk
-Dance
-Halt
-Camera ON
-Camera OFF
+</ul>
 
 ### Step 3: Creating the Sensor Dashboard
 
 A Sensor Dashboard was developed to display real-time environmental data collected by the sensors connected to the ESP32. The dashboard retrieves data from the ThingSpeak cloud platform and presents all sensor readings on a single screen.
 
 The integrated sensors include:
-
-🌡 Temperature Sensor
-🌧 Rain Sensor
-🌱 Soil Moisture Sensor
-🔥 Flame Sensor
-🔊 Sound Sensor
-📡 IR Obstacle Sensor
+<ul>
+  <li>🌡 Temperature Sensor</li>
+   <li>🌧 Rain Sensor</li>
+   <li>🌱 Soil Moisture Sensor</li>
+   <li>🔥 Flame Sensor</li>
+   <li>🔊 Sound Sensor</li>
+   <li>📡 IR Obstacle Sensor</li>
+</ul>
 
 Each sensor value is displayed inside individual cards with appropriate labels, making the dashboard easy to understand and monitor.
 
