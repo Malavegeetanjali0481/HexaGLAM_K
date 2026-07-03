@@ -1,6 +1,5 @@
-# HexaGLAM_K
-This project presents a Hexapod Robot built using an ESP32 microcontroller and an 18-servo locomotion system. The robot is designed to achieve stable movement using a six-legged walking mechanism, making it suitable for navigating uneven terrain while maintaining balance. Each leg consists of three servo motors.
-## 📱 HexaGlam_K Mobile Application Development
+
+### 📱 HexaGlam_K Mobile Application Development
 
 The HexaGlam_K mobile application was developed using MIT App Inventor to provide an intuitive interface for controlling and monitoring the ESP32-based Hexapod Robot. The application consists of multiple screens, each designed for a specific functionality, making robot operation simple and user-friendly.
 
