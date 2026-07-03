@@ -43,14 +43,10 @@ Each sensor value is displayed inside individual cards with appropriate labels, 
   </tr>
 </table>
 
-<table>
-  <tr>
-    <td >
-      https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
+
+       https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
       https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/2
-      </td>
-  </tr>
-</table>
+  
  
 
 
