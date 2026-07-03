@@ -1,15 +1,16 @@
-### 🚶 Hexapod Walking
+## 1)🚶 Hexapod Walking
 
 The walking function enables the hexapod robot to move forward using a tripod gait, where three legs move while the other three remain on the ground for support. This gait provides excellent stability, smooth movement, and balanced weight distribution, allowing the robot to navigate different surfaces efficiently while maintaining continuous balance.
+
 Walking Demo Video : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
 
-### 💃 Hexapod Dancing
+## 2)💃 Hexapod Dancing
 
 The dancing function demonstrates the robot's coordinated servo movements by executing a sequence of rhythmic leg motions. The programmed dance routine synchronizes all six legs to create smooth and visually appealing movements, showcasing the precision of the inverse kinematics and servo control system while highlighting the robot's flexibility and stability.
 
  Dancing Demo Video : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/2
  
-### 📱 HexaGlAM_K Mobile Application Development
+## 3)📱 HexaGlAM_K Mobile Application Development
 
 The HexaGlAM_K mobile application was developed using MIT App Inventor to provide an intuitive interface for controlling and monitoring the ESP32-based Hexapod Robot. The application consists of multiple screens, each designed for a specific functionality, making robot operation simple and user-friendly.
 
@@ -54,9 +55,6 @@ Each sensor value is displayed inside individual cards with appropriate labels, 
 </table>
 
 
-       https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
-      https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/2
-  
  
 
 
