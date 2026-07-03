@@ -1,5 +1,6 @@
 
  Walking : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/1
+ 
  Dancing : https://github.com/Malavegeetanjali0481/HexaGLAM_K/issues/2
  
 ### 📱 HexaGlAM_K Mobile Application Development
