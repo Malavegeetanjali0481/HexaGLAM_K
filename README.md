@@ -47,7 +47,7 @@ Each sensor value is displayed inside individual cards with appropriate labels, 
   </tr>
 </table>
 
-<img src="https://github.com/Malavegeetanjali0481/HexaGLAM_K/blob/main/Images/side_top_front.png" width = "40%" height="40%" alt="">
+<img src="https://github.com/Malavegeetanjali0481/HexaGLAM_K/blob/main/Images/side_top_front.png" width = "80%" height="50%" alt="">
 
 
  
