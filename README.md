@@ -1,2 +1,53 @@
 # HexaGLAM_K
 This project presents a Hexapod Robot built using an ESP32 microcontroller and an 18-servo locomotion system. The robot is designed to achieve stable movement using a six-legged walking mechanism, making it suitable for navigating uneven terrain while maintaining balance. Each leg consists of three servo motors.
+## 📱 HexaGlam_K Mobile Application Development
+
+The HexaGlam_K mobile application was developed using MIT App Inventor to provide an intuitive interface for controlling and monitoring the ESP32-based Hexapod Robot. The application consists of multiple screens, each designed for a specific functionality, making robot operation simple and user-friendly.
+
+### Step 1: Designing the Home Screen
+
+The development began by creating the Home Screen, which serves as the application's landing page. A clean and attractive user interface was designed with the project title, robot image/logo, and navigation buttons. This screen allows users to easily access different modules of the application such as Robot Control, Sensor Dashboard, Camera Monitoring, and About sections. Proper alignment, icons, and color themes were chosen to enhance the overall user experience.
+
+Features
+
+Project title and logo
+User-friendly interface
+Navigation buttons for all modules
+Clean and responsive layout
+
+### Step 2: Developing the Robot Control Screen
+
+A dedicated Control Screen was developed to operate the Hexapod robot remotely. Large control buttons were added to send Bluetooth commands to the ESP32. Each button transmits a predefined command that controls the robot's movements.
+
+The implemented control functions include:
+
+Stand
+Walk
+Dance
+Halt
+Camera ON
+Camera OFF
+
+### Step 3: Creating the Sensor Dashboard
+
+A Sensor Dashboard was developed to display real-time environmental data collected by the sensors connected to the ESP32. The dashboard retrieves data from the ThingSpeak cloud platform and presents all sensor readings on a single screen.
+
+The integrated sensors include:
+
+🌡 Temperature Sensor
+🌧 Rain Sensor
+🌱 Soil Moisture Sensor
+🔥 Flame Sensor
+🔊 Sound Sensor
+📡 IR Obstacle Sensor
+
+Each sensor value is displayed inside individual cards with appropriate labels, making the dashboard easy to understand and monitor.
+
+
+
+
+Modern button design
+Organized layouts
+Easy navigation
+Responsive screen arrangement
+Clear labels and icons
