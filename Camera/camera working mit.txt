@@ -1,0 +1,831 @@
+#include "esp_camera.h"
+#include <WiFi.h>
+#include <WebServer.h>
+
+// =====================================================
+// WEB SERVERS
+// =====================================================
+
+// Normal control/web server
+WebServer server(80);
+
+// Dedicated MJPEG video stream server
+WiFiServer streamServer(81);
+
+// Stream client
+WiFiClient streamClient;
+
+// =====================================================
+// ESP32-CAM HOTSPOT SETTINGS
+// =====================================================
+
+const char* ap_ssid = "HEXAPOD_CAM";
+const char* ap_password = "12345678";
+
+// Fixed IP
+IPAddress local_IP(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);
+IPAddress subnet(255, 255, 255, 0);
+
+// =====================================================
+// AI THINKER ESP32-CAM PINS
+// =====================================================
+
+#define PWDN_GPIO_NUM     32
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM      0
+#define SIOD_GPIO_NUM     26
+#define SIOC_GPIO_NUM     27
+
+#define Y9_GPIO_NUM       35
+#define Y8_GPIO_NUM       34
+#define Y7_GPIO_NUM       39
+#define Y6_GPIO_NUM       36
+#define Y5_GPIO_NUM       21
+#define Y4_GPIO_NUM       19
+#define Y3_GPIO_NUM       18
+#define Y2_GPIO_NUM       5
+
+#define VSYNC_GPIO_NUM    25
+#define HREF_GPIO_NUM     23
+#define PCLK_GPIO_NUM     22
+
+// =====================================================
+// CAMERA VARIABLES
+// =====================================================
+
+bool camera_is_on = true;
+
+camera_config_t global_camera_config;
+
+// =====================================================
+// STREAM VARIABLES
+// =====================================================
+
+unsigned long lastStreamFrame = 0;
+
+// Approximately 8 FPS
+const unsigned long STREAM_INTERVAL = 125;
+
+// =====================================================
+// ROOT PAGE
+// =====================================================
+
+void handleRoot() {
+
+  String html = R"rawliteral(
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<title>HEXAPOD ESP32-CAM</title>
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<style>
+
+body {
+    background:#111;
+    color:white;
+    text-align:center;
+    font-family:Arial, sans-serif;
+    margin:0;
+    padding:10px;
+}
+
+h2 {
+    margin-top:15px;
+    margin-bottom:15px;
+}
+
+#camera {
+    width:95%;
+    max-width:640px;
+    height:auto;
+    border:3px solid lime;
+    border-radius:8px;
+    display:block;
+    margin:15px auto;
+}
+
+button {
+    padding:14px 28px;
+    font-size:18px;
+    border:none;
+    border-radius:8px;
+    margin:8px;
+    color:white;
+    min-width:140px;
+    cursor:pointer;
+}
+
+.on {
+    background:green;
+}
+
+.off {
+    background:red;
+}
+
+#cam-msg {
+    display:none;
+    color:red;
+    font-size:22px;
+    margin-top:20px;
+}
+
+#status {
+    color:#00ff00;
+    font-size:16px;
+    margin-top:10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>HEXAPOD ESP32-CAM</h2>
+
+<img id="camera"
+src="http://192.168.4.1:81/stream">
+
+<div id="cam-msg">
+Camera is OFF
+</div>
+
+<div id="status">
+Camera Connected
+</div>
+
+<br>
+
+<button class="on"
+onclick="turnCameraOn()">
+
+Camera ON
+
+</button>
+
+<button class="off"
+onclick="turnCameraOff()">
+
+Camera OFF
+
+</button>
+
+
+<script>
+
+function turnCameraOn() {
+
+    fetch("/camera_on")
+    .then(function(response) {
+
+        if (!response.ok) {
+            throw new Error("Camera ON failed");
+        }
+
+        document.getElementById("camera").style.display = "block";
+
+        document.getElementById("cam-msg").style.display = "none";
+
+        document.getElementById("status").innerHTML =
+            "Camera Connected";
+
+        document.getElementById("camera").src =
+            "http://192.168.4.1:81/stream?x=" +
+            new Date().getTime();
+
+    })
+    .catch(function(error) {
+
+        console.log(error);
+
+        document.getElementById("status").innerHTML =
+            "Camera ON failed";
+
+    });
+
+}
+
+
+function turnCameraOff() {
+
+    fetch("/camera_off")
+    .then(function(response) {
+
+        document.getElementById("camera").style.display =
+            "none";
+
+        document.getElementById("cam-msg").style.display =
+            "block";
+
+        document.getElementById("status").innerHTML =
+            "Camera OFF";
+
+    })
+    .catch(function(error) {
+
+        console.log(error);
+
+    });
+
+}
+
+</script>
+
+</body>
+
+</html>
+)rawliteral";
+
+  server.send(200, "text/html", html);
+}
+
+
+// =====================================================
+// CAMERA ON
+// =====================================================
+
+void handleCameraOn() {
+
+  Serial.println("Camera ON request received");
+
+  if (!camera_is_on) {
+
+    esp_err_t err =
+      esp_camera_init(&global_camera_config);
+
+    if (err == ESP_OK) {
+
+      sensor_t *s =
+        esp_camera_sensor_get();
+
+      if (s != NULL &&
+          s->id.PID == OV3660_PID) {
+
+        s->set_vflip(s, 1);
+        s->set_brightness(s, 1);
+        s->set_saturation(s, -2);
+      }
+
+      camera_is_on = true;
+
+      Serial.println("Camera turned ON");
+
+    }
+
+    else {
+
+      Serial.printf(
+        "Camera ON failed: 0x%x\n",
+        err
+      );
+
+      server.send(
+        500,
+        "text/plain",
+        "Camera ON failed"
+      );
+
+      return;
+    }
+  }
+
+  server.send(
+    200,
+    "text/plain",
+    "Camera ON"
+  );
+}
+
+
+// =====================================================
+// CAMERA OFF
+// =====================================================
+
+void handleCameraOff() {
+
+  Serial.println("Camera OFF request received");
+
+  if (camera_is_on) {
+
+    // Stop current video client
+    if (streamClient && streamClient.connected()) {
+      streamClient.stop();
+    }
+
+    esp_camera_deinit();
+
+    camera_is_on = false;
+
+    Serial.println("Camera turned OFF");
+  }
+
+  server.send(
+    200,
+    "text/plain",
+    "Camera OFF"
+  );
+}
+
+
+// =====================================================
+// START MJPEG STREAM CLIENT
+// =====================================================
+
+void startStreamClient() {
+
+  if (streamClient && streamClient.connected()) {
+    return;
+  }
+
+  WiFiClient newClient = streamServer.available();
+
+  if (!newClient) {
+    return;
+  }
+
+  streamClient = newClient;
+
+  streamClient.setTimeout(1000);
+
+  Serial.println("================================");
+  Serial.println("New video stream client");
+  Serial.println("================================");
+
+  // Read and discard HTTP request
+  unsigned long startTime = millis();
+
+  while (streamClient.connected() &&
+         millis() - startTime < 500) {
+
+    while (streamClient.available()) {
+
+      String line =
+        streamClient.readStringUntil('\n');
+
+      if (line == "\r" || line.length() == 0) {
+        break;
+      }
+    }
+
+    break;
+  }
+
+  // Send MJPEG HTTP headers
+
+  streamClient.print(
+    "HTTP/1.1 200 OK\r\n"
+    "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
+    "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+    "Pragma: no-cache\r\n"
+    "Expires: 0\r\n"
+    "Connection: close\r\n"
+    "Access-Control-Allow-Origin: *\r\n"
+    "\r\n"
+  );
+
+  lastStreamFrame = 0;
+}
+
+
+// =====================================================
+// SEND ONE MJPEG FRAME
+// =====================================================
+
+void sendStreamFrame() {
+
+  if (!streamClient ||
+      !streamClient.connected()) {
+
+    return;
+  }
+
+  if (!camera_is_on) {
+    return;
+  }
+
+  camera_fb_t *fb =
+    esp_camera_fb_get();
+
+  if (!fb) {
+
+    Serial.println(
+      "Stream camera capture failed"
+    );
+
+    return;
+  }
+
+  // MJPEG frame header
+
+  streamClient.print(
+    "--frame\r\n"
+    "Content-Type: image/jpeg\r\n"
+    "Content-Length: "
+  );
+
+  streamClient.print(fb->len);
+
+  streamClient.print(
+    "\r\n\r\n"
+  );
+
+  // Send JPEG
+
+  size_t written =
+    streamClient.write(
+      fb->buf,
+      fb->len
+    );
+
+  streamClient.print(
+    "\r\n"
+  );
+
+  // Return camera buffer
+
+  esp_camera_fb_return(fb);
+
+  if (written != fb->len) {
+
+    Serial.println(
+      "Video client disconnected"
+    );
+
+    streamClient.stop();
+  }
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  Serial.println();
+
+  Serial.println(
+    "================================"
+  );
+
+  Serial.println(
+    "HEXAPOD ESP32-CAM STARTING"
+  );
+
+  Serial.println(
+    "================================"
+  );
+
+
+  // ===================================================
+  // CAMERA CONFIGURATION
+  // ===================================================
+
+  camera_config_t config;
+
+  config.ledc_channel =
+    LEDC_CHANNEL_0;
+
+  config.ledc_timer =
+    LEDC_TIMER_0;
+
+  config.pin_d0 =
+    Y2_GPIO_NUM;
+
+  config.pin_d1 =
+    Y3_GPIO_NUM;
+
+  config.pin_d2 =
+    Y4_GPIO_NUM;
+
+  config.pin_d3 =
+    Y5_GPIO_NUM;
+
+  config.pin_d4 =
+    Y6_GPIO_NUM;
+
+  config.pin_d5 =
+    Y7_GPIO_NUM;
+
+  config.pin_d6 =
+    Y8_GPIO_NUM;
+
+  config.pin_d7 =
+    Y9_GPIO_NUM;
+
+  config.pin_xclk =
+    XCLK_GPIO_NUM;
+
+  config.pin_pclk =
+    PCLK_GPIO_NUM;
+
+  config.pin_vsync =
+    VSYNC_GPIO_NUM;
+
+  config.pin_href =
+    HREF_GPIO_NUM;
+
+  config.pin_sccb_sda =
+    SIOD_GPIO_NUM;
+
+  config.pin_sccb_scl =
+    SIOC_GPIO_NUM;
+
+  config.pin_pwdn =
+    PWDN_GPIO_NUM;
+
+  config.pin_reset =
+    RESET_GPIO_NUM;
+
+  config.xclk_freq_hz =
+    20000000;
+
+  // JPEG format
+
+  config.pixel_format =
+    PIXFORMAT_JPEG;
+
+  // QVGA
+  // Good starting point for Wi-Fi streaming
+
+  config.frame_size =
+    FRAMESIZE_QVGA;
+
+  // JPEG quality
+  // Higher number = lower quality/smaller file
+
+  config.jpeg_quality =
+    12;
+
+  // One frame buffer
+
+  config.fb_count =
+    1;
+
+  // PSRAM
+
+  config.fb_location =
+    CAMERA_FB_IN_PSRAM;
+
+  config.grab_mode =
+    CAMERA_GRAB_LATEST;
+
+  // Save configuration
+
+  global_camera_config =
+    config;
+
+
+  // ===================================================
+  // CAMERA INITIALIZATION
+  // ===================================================
+
+  esp_err_t err =
+    esp_camera_init(&config);
+
+  if (err != ESP_OK) {
+
+    Serial.printf(
+      "Camera init failed: 0x%x\n",
+      err
+    );
+
+    return;
+  }
+
+
+  sensor_t *s =
+    esp_camera_sensor_get();
+
+  if (s != NULL &&
+      s->id.PID == OV3660_PID) {
+
+    Serial.println(
+      "OV3660 camera detected"
+    );
+
+    s->set_vflip(s, 1);
+    s->set_brightness(s, 1);
+    s->set_saturation(s, -2);
+  }
+
+
+  Serial.println(
+    "Camera initialized"
+  );
+
+
+  // ===================================================
+  // START ESP32 HOTSPOT
+  // ===================================================
+
+  Serial.println();
+
+  Serial.println(
+    "Starting ESP32-CAM hotspot..."
+  );
+
+  WiFi.mode(WIFI_AP);
+
+
+  // Configure fixed IP
+
+  if (!WiFi.softAPConfig(
+        local_IP,
+        gateway,
+        subnet
+      )) {
+
+    Serial.println(
+      "Hotspot IP configuration FAILED!"
+    );
+  }
+
+  else {
+
+    Serial.println(
+      "Fixed IP configured successfully"
+    );
+  }
+
+
+  // Start hotspot
+
+  bool ap_started =
+    WiFi.softAP(
+      ap_ssid,
+      ap_password
+    );
+
+
+  if (!ap_started) {
+
+    Serial.println(
+      "Hotspot start FAILED!"
+    );
+
+    return;
+  }
+
+
+  // ===================================================
+  // NETWORK INFORMATION
+  // ===================================================
+
+  Serial.println();
+
+  Serial.println(
+    "================================"
+  );
+
+  Serial.println(
+    "HOTSPOT STARTED"
+  );
+
+  Serial.println(
+    "================================"
+  );
+
+  Serial.print(
+    "WiFi Name: "
+  );
+
+  Serial.println(
+    ap_ssid
+  );
+
+  Serial.print(
+    "Password: "
+  );
+
+  Serial.println(
+    ap_password
+  );
+
+  Serial.print(
+    "Fixed IP: "
+  );
+
+  Serial.println(
+    WiFi.softAPIP()
+  );
+
+  Serial.println();
+
+  Serial.println(
+    "Web page:"
+  );
+
+  Serial.println(
+    "http://192.168.4.1/"
+  );
+
+  Serial.println();
+
+  Serial.println(
+    "LIVE VIDEO:"
+  );
+
+  Serial.println(
+    "http://192.168.4.1:81/stream"
+  );
+
+  Serial.println();
+
+  Serial.println(
+    "================================"
+  );
+
+
+  // ===================================================
+  // NORMAL WEB SERVER ROUTES
+  // ===================================================
+
+  server.on(
+    "/",
+    handleRoot
+  );
+
+  server.on(
+    "/camera_on",
+    handleCameraOn
+  );
+
+  server.on(
+    "/camera_off",
+    handleCameraOff
+  );
+
+
+  // Start normal server
+
+  server.begin();
+
+
+  // ===================================================
+  // START VIDEO SERVER
+  // ===================================================
+
+  streamServer.begin();
+
+  Serial.println(
+    "Web server started on port 80"
+  );
+
+  Serial.println(
+    "Video server started on port 81"
+  );
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop() {
+
+  // Handle normal web/control requests
+
+  server.handleClient();
+
+
+  // Check for a new video client
+
+  if (!streamClient ||
+      !streamClient.connected()) {
+
+    if (streamClient) {
+      streamClient.stop();
+    }
+
+    startStreamClient();
+  }
+
+
+  // Send video frames
+
+  if (streamClient &&
+      streamClient.connected() &&
+      camera_is_on) {
+
+    if (millis() - lastStreamFrame >=
+        STREAM_INTERVAL) {
+
+      lastStreamFrame = millis();
+
+      sendStreamFrame();
+    }
+  }
+
+  delay(1);
+}
